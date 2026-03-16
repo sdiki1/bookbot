@@ -1,0 +1,74 @@
+{% extends "layout.html" %}
+{% if mode == "create" %}
+  {% set title_text = "Добавление книги" %}
+{% else %}
+  {% set title_text = "Редактирование книги" %}
+{% endif %}
+{% block title %}{{ title_text }}{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-body">
+    <h2 style="margin-top: 0;">{{ title_text }}</h2>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{{ action_url }}" enctype="multipart/form-data">
+      <div class="field">
+        <label for="title">Название *</label>
+        <input id="title" name="title" required value="{{ form_data.get('title', book.title if book else '') }}">
+      </div>
+      <div class="field">
+        <label for="author">Автор *</label>
+        <input id="author" name="author" required value="{{ form_data.get('author', book.author if book else '') }}">
+      </div>
+      <div class="field">
+        <label for="description">Краткое описание *</label>
+        <textarea id="description" name="description" required>{{ form_data.get('description', book.description if book else '') }}</textarea>
+      </div>
+      <div class="field">
+        <label for="status">Статус *</label>
+        {% set selected_status = form_data.get('status', book.status if book else 'available') %}
+        <select id="status" name="status" required>
+          {% for status_code, status_label in status_options %}
+            <option value="{{ status_code }}" {% if status_code == selected_status %}selected{% endif %}>{{ status_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {% if book %}
+        {% set preview_url = photo_preview_url(book.photo_file_id) %}
+        <div class="field">
+          <label>Текущая обложка</label>
+          {% if preview_url %}
+            <img class="cover" src="{{ preview_url }}" alt="current-cover-{{ book.id }}">
+          {% else %}
+            <div class="muted">Сейчас используется Telegram `file_id`.</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <div class="field">
+        <label for="photo_upload">Загрузить фото обложки (jpg/png/webp)</label>
+        <input id="photo_upload" name="photo_upload" type="file" accept=".jpg,.jpeg,.png,.webp">
+      </div>
+      <div class="field">
+        <label for="photo_file_id">Или указать Telegram file_id</label>
+        <input
+          id="photo_file_id"
+          name="photo_file_id"
+          placeholder="AgACAgIAAx..."
+          value="{{ form_data.get('photo_file_id', '') }}"
+        >
+      </div>
+      <p class="muted">
+        Приоритет такой: если загружен файл, используется он.
+        Если файла нет, берется `file_id`.
+      </p>
+      <div class="actions">
+        <button type="submit">Сохранить</button>
+        <a class="btn btn-secondary" href="/books">Назад к каталогу</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

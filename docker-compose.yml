@@ -1,0 +1,25 @@
+services:
+  bot:
+    build: .
+    command: python3 main.py
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - bookbot-data:/app/data
+
+  admin:
+    build: .
+    command: python3 main_web.py
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
+    volumes:
+      - bookbot-data:/app/data
+    depends_on:
+      - bot
+
+volumes:
+  bookbot-data:

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Bookbot Admin{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --primary: #0f766e;
+      --danger: #b91c1c;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #e8eef0 0%, var(--bg) 35%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 24px 16px 32px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .logo {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.2px;
+    }
+    nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    nav a {
+      text-decoration: none;
+      color: var(--primary);
+      border: 1px solid rgba(15, 118, 110, 0.3);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.06);
+      font-weight: 600;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 28px rgba(17, 24, 39, 0.06);
+      overflow: hidden;
+    }
+    .card-body {
+      padding: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px 8px;
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .cover {
+      width: 74px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      background: #f9fafb;
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #fff;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .field { margin-bottom: 12px; }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button, .btn {
+      border: 1px solid transparent;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: none;
+      font: inherit;
+    }
+    .btn-secondary {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--text);
+    }
+    .btn-danger {
+      background: #fff5f5;
+      color: var(--danger);
+      border-color: #fecaca;
+    }
+    .error {
+      border: 1px solid #fecaca;
+      background: #fff1f2;
+      color: #9f1239;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    .status { font-weight: 700; }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 840px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      tr { border-bottom: 1px solid #e5e7eb; padding: 10px 0; }
+      td { border: 0; padding: 6px 0; }
+      td::before {
+        content: attr(data-label);
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 class="logo">Book Sharing Admin</h1>
+      <nav>
+        <a href="/books">Каталог</a>
+        <a href="/books/new">Добавить книгу</a>
+      </nav>
+    </header>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

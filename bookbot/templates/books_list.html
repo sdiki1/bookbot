@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+{% block title %}Каталог книг{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card-body">
+    <div class="toolbar">
+      <div class="muted">Всего книг: {{ books|length }}</div>
+      <a class="btn" href="/books/new">+ Добавить книгу</a>
+    </div>
+    {% if not books %}
+      <p class="muted">Каталог пуст. Добавьте первую книгу.</p>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Фото</th>
+            <th>Название</th>
+            <th>Автор</th>
+            <th>Описание</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for book in books %}
+          {% set preview_url = photo_preview_url(book.photo_file_id) %}
+          <tr>
+            <td data-label="ID">{{ book.id }}</td>
+            <td data-label="Фото">
+              {% if preview_url %}
+                <img class="cover" src="{{ preview_url }}" alt="cover-{{ book.id }}">
+              {% else %}
+                <span class="muted">Telegram file_id</span>
+              {% endif %}
+            </td>
+            <td data-label="Название"><strong>{{ book.title }}</strong></td>
+            <td data-label="Автор">{{ book.author }}</td>
+            <td data-label="Описание">{{ book.description }}</td>
+            <td data-label="Статус">
+              <div class="status">{{ status_labels.get(book.status, book.status) }}</div>
+              <form method="post" action="/books/{{ book.id }}/status" class="actions" style="margin-top: 8px;">
+                <select name="status">
+                  {% for status_code, status_label in status_options %}
+                    <option value="{{ status_code }}" {% if status_code == book.status %}selected{% endif %}>{{ status_label }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn-secondary">Обновить</button>
+              </form>
+            </td>
+            <td data-label="Действия">
+              <div class="actions">
+                <a class="btn-secondary btn" href="/books/{{ book.id }}/edit">Редактировать</a>
+                <form method="post" action="/books/{{ book.id }}/delete" onsubmit="return confirm('Удалить книгу #{{ book.id }}?');">
+                  <button type="submit" class="btn-danger">Удалить</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
