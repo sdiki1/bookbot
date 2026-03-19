@@ -25,6 +25,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .config import Config, load_config
 from .db import (
     Book,
+    BookInterest,
     BookRepository,
     STATUS_AVAILABLE,
     STATUS_LABELS,
@@ -35,6 +36,7 @@ from .texts import ADMIN_HELP_TEXT, RULES_TEXT, START_TEXT
 from .photos import is_local_photo_ref, resolve_local_photo_path
 
 LOGGER = logging.getLogger(__name__)
+MAX_TELEGRAM_TEXT_LEN = 3900
 
 STATUS_ALIASES = {
     "available": STATUS_AVAILABLE,
@@ -71,6 +73,7 @@ def _main_menu_keyboard(*, is_admin: bool) -> ReplyKeyboardMarkup:
                 KeyboardButton(text="Админ: список книг"),
             ]
         )
+        rows.append([KeyboardButton(text="Админ: заявки")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -93,10 +96,10 @@ def _normalize_status(raw_status: str) -> str | None:
 def _book_caption(book: Book) -> str:
     status_label = STATUS_LABELS.get(book.status, book.status)
     return (
-        f"<b>{escape(book.title)}</b>\n"
-        f"Автор: {escape(book.author)}\n"
-        f"Статус: <b>{escape(status_label)}</b>\n\n"
-        f"{escape(book.description)}"
+        f"📘 <b>{escape(book.title)}</b>\n"
+        f"✍️ Автор: {escape(book.author)}\n"
+        f"📍 Статус: <b>{escape(status_label)}</b>\n\n"
+        f"📝 {escape(book.description)}"
     )
 
 
@@ -109,6 +112,39 @@ def _photo_for_telegram(photo_ref: str, config: Config) -> str | FSInputFile | N
         LOGGER.warning("Local photo file not found: %s", local_path)
         return None
     return FSInputFile(local_path)
+
+
+def _interest_line(interest: BookInterest) -> str:
+    username = f"@{escape(interest.username)}" if interest.username else "без username"
+    return (
+        f"• <a href=\"tg://user?id={interest.user_id}\">{escape(interest.full_name)}</a> "
+        f"({username}) — 🕒 {escape(interest.updated_at)}"
+    )
+
+
+def _chunk_lines(lines: list[str], *, max_len: int = MAX_TELEGRAM_TEXT_LEN) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        candidate = "\n".join([*current, line]) if current else line
+        if len(candidate) <= max_len:
+            current.append(line)
+            continue
+
+        if current:
+            chunks.append("\n".join(current))
+            current = []
+
+        if len(line) <= max_len:
+            current.append(line)
+            continue
+
+        for index in range(0, len(line), max_len):
+            chunks.append(line[index : index + max_len])
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
 
 def _book_card_keyboard(
@@ -201,13 +237,13 @@ async def _send_book_card(
 ) -> None:
     payload = _get_book_position(repo, book_id)
     if payload is None:
-        await message.answer("Книга не найдена.")
+        await message.answer("❌ Книга не найдена.")
         return
 
     book, book_ids, current_index = payload
     photo = _photo_for_telegram(book.photo_file_id, config)
     if photo is None:
-        await message.answer("Не удалось открыть фото книги. Обновите обложку в админке.")
+        await message.answer("⚠️ Не удалось открыть фото книги. Обновите обложку в админке.")
         return
 
     await message.answer_photo(
@@ -230,18 +266,18 @@ async def _edit_book_card(
     config: Config,
 ) -> None:
     if callback.message is None or not isinstance(callback.message, Message):
-        await callback.answer("Сообщение недоступно", show_alert=True)
+        await callback.answer("⚠️ Сообщение недоступно", show_alert=True)
         return
 
     payload = _get_book_position(repo, book_id)
     if payload is None:
-        await callback.answer("Книга не найдена", show_alert=True)
+        await callback.answer("❌ Книга не найдена", show_alert=True)
         return
 
     book, book_ids, current_index = payload
     photo = _photo_for_telegram(book.photo_file_id, config)
     if photo is None:
-        await callback.answer("Фото книги не найдено. Обновите обложку в админке.", show_alert=True)
+        await callback.answer("⚠️ Фото книги не найдено. Обновите обложку в админке.", show_alert=True)
         return
 
     try:
@@ -287,7 +323,7 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     async def catalog_handler(message: Message) -> None:
         first_book_id = _first_book_id(repo)
         if first_book_id is None:
-            await message.answer("Каталог пока пуст.")
+            await message.answer("📭 Каталог пока пуст.")
             return
         is_admin = _is_admin(message.from_user.id if message.from_user else None, config)
         await _send_book_card(
@@ -302,11 +338,11 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     @router.message(Command("addbook"))
     async def addbook_start_handler(message: Message, state: FSMContext) -> None:
         if not _is_admin(message.from_user.id if message.from_user else None, config):
-            await message.answer("Эта команда доступна только администратору.")
+            await message.answer("⛔ Эта команда доступна только администратору.")
             return
         await state.set_state(AddBookFlow.title)
         await message.answer(
-            "Добавление книги: введите название.",
+            "➕ Добавление книги: введите название.",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -314,13 +350,13 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     async def cancel_handler(message: Message, state: FSMContext) -> None:
         current_state = await state.get_state()
         if current_state is None:
-            await message.answer("Нет активного действия для отмены.")
+            await message.answer("ℹ️ Нет активного действия для отмены.")
             return
 
         await state.clear()
         is_admin = _is_admin(message.from_user.id if message.from_user else None, config)
         await message.answer(
-            "Действие отменено.",
+            "✅ Действие отменено.",
             reply_markup=_main_menu_keyboard(is_admin=is_admin),
         )
 
@@ -328,32 +364,32 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     async def addbook_title_handler(message: Message, state: FSMContext) -> None:
         title = (message.text or "").strip()
         if not title:
-            await message.answer("Название не может быть пустым. Введите название книги.")
+            await message.answer("⚠️ Название не может быть пустым. Введите название книги.")
             return
         await state.update_data(title=title)
         await state.set_state(AddBookFlow.author)
-        await message.answer("Введите автора.")
+        await message.answer("✍️ Введите автора.")
 
     @router.message(AddBookFlow.author)
     async def addbook_author_handler(message: Message, state: FSMContext) -> None:
         author = (message.text or "").strip()
         if not author:
-            await message.answer("Автор не может быть пустым. Введите автора.")
+            await message.answer("⚠️ Автор не может быть пустым. Введите автора.")
             return
         await state.update_data(author=author)
         await state.set_state(AddBookFlow.description)
-        await message.answer("Введите краткое описание.")
+        await message.answer("📝 Введите краткое описание.")
 
     @router.message(AddBookFlow.description)
     async def addbook_description_handler(message: Message, state: FSMContext) -> None:
         description = (message.text or "").strip()
         if not description:
-            await message.answer("Описание не может быть пустым. Введите краткое описание.")
+            await message.answer("⚠️ Описание не может быть пустым. Введите краткое описание.")
             return
         await state.update_data(description=description)
         await state.set_state(AddBookFlow.status)
         await message.answer(
-            "Выберите статус книги.",
+            "📍 Выберите статус книги.",
             reply_markup=_status_picker_keyboard(),
         )
 
@@ -362,21 +398,21 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
         status = _normalize_status(message.text or "")
         if status is None:
             await message.answer(
-                "Не распознал статус. Выберите один из вариантов.",
+                "⚠️ Не распознал статус. Выберите один из вариантов.",
                 reply_markup=_status_picker_keyboard(),
             )
             return
         await state.update_data(status=status)
         await state.set_state(AddBookFlow.photo)
         await message.answer(
-            "Пришлите фото книги (обложки).",
+            "🖼️ Пришлите фото книги (обложки).",
             reply_markup=ReplyKeyboardRemove(),
         )
 
     @router.message(AddBookFlow.photo)
     async def addbook_photo_handler(message: Message, state: FSMContext) -> None:
         if not message.photo:
-            await message.answer("Нужна фотография. Пришлите фото книги.")
+            await message.answer("⚠️ Нужна фотография. Пришлите фото книги.")
             return
 
         data = await state.get_data()
@@ -392,7 +428,7 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
 
         await state.clear()
         await message.answer(
-            f"Книга добавлена. ID: {book_id}",
+            f"✅ Книга добавлена. ID: {book_id}",
             reply_markup=_main_menu_keyboard(is_admin=True),
         )
 
@@ -400,55 +436,83 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     @router.message(Command("books"))
     async def books_list_handler(message: Message) -> None:
         if not _is_admin(message.from_user.id if message.from_user else None, config):
-            await message.answer("Эта команда доступна только администратору.")
+            await message.answer("⛔ Эта команда доступна только администратору.")
             return
 
         rows = list(repo.iter_books_with_status())
         if not rows:
-            await message.answer("В каталоге пока нет книг.")
+            await message.answer("📭 В каталоге пока нет книг.")
             return
 
-        lines = ["Книги в каталоге:"]
+        lines = ["📚 Книги в каталоге:"]
         for book_id, title, status in rows:
             lines.append(
                 f"{book_id}. {escape(title)} — {STATUS_LABELS.get(status, status)}"
             )
         await message.answer("\n".join(lines))
 
+    @router.message(F.text == "Админ: заявки")
+    @router.message(Command("interests"))
+    async def interests_handler(message: Message) -> None:
+        if not _is_admin(message.from_user.id if message.from_user else None, config):
+            await message.answer("⛔ Эта команда доступна только администратору.")
+            return
+
+        interests = repo.list_interests()
+        if not interests:
+            await message.answer("📭 Пока нет заявок на чтение или бронирование.")
+            return
+
+        lines = ["🙋 Заявки на чтение/бронирование:"]
+        current_book_id: int | None = None
+        for interest in interests:
+            if interest.book_id != current_book_id:
+                current_book_id = interest.book_id
+                status_label = STATUS_LABELS.get(interest.book_status, "Книга удалена")
+                lines.append("")
+                lines.append(
+                    f"📘 {interest.book_id}. {escape(interest.book_title)} "
+                    f"({escape(status_label)})"
+                )
+            lines.append(_interest_line(interest))
+
+        for chunk in _chunk_lines(lines):
+            await message.answer(chunk)
+
     @router.message(Command("setstatus"))
     async def setstatus_handler(message: Message) -> None:
         if not _is_admin(message.from_user.id if message.from_user else None, config):
-            await message.answer("Эта команда доступна только администратору.")
+            await message.answer("⛔ Эта команда доступна только администратору.")
             return
 
         if not message.text:
-            await message.answer("Использование: /setstatus &lt;id&gt; &lt;status&gt;")
+            await message.answer("ℹ️ Использование: /setstatus &lt;id&gt; &lt;status&gt;")
             return
 
         parts = message.text.split(maxsplit=2)
         if len(parts) < 3:
-            await message.answer("Использование: /setstatus &lt;id&gt; &lt;status&gt;")
+            await message.answer("ℹ️ Использование: /setstatus &lt;id&gt; &lt;status&gt;")
             return
 
         book_id_raw, status_raw = parts[1], parts[2]
         if not book_id_raw.isdigit():
-            await message.answer("ID книги должен быть числом.")
+            await message.answer("⚠️ ID книги должен быть числом.")
             return
 
         status = _normalize_status(status_raw)
         if status is None:
             await message.answer(
-                "Неизвестный статус. Используйте: available, reserved, with_reader "
+                "⚠️ Неизвестный статус. Используйте: available, reserved, with_reader "
                 "или русские варианты."
             )
             return
 
         updated = repo.update_status(int(book_id_raw), status)
         if not updated:
-            await message.answer("Книга с таким ID не найдена.")
+            await message.answer("❌ Книга с таким ID не найдена.")
             return
         await message.answer(
-            f"Статус книги {book_id_raw} обновлен: {STATUS_LABELS[status]}"
+            f"✅ Статус книги {book_id_raw} обновлен: {STATUS_LABELS[status]}"
         )
 
     @router.callback_query(F.data == "book_noop")
@@ -458,11 +522,11 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     @router.callback_query(F.data.startswith("book_open:"))
     async def open_book_callback(callback: CallbackQuery) -> None:
         if not callback.data:
-            await callback.answer("Некорректная команда", show_alert=True)
+            await callback.answer("⚠️ Некорректная команда", show_alert=True)
             return
         _, raw_book_id = callback.data.split(":", maxsplit=1)
         if not raw_book_id.isdigit():
-            await callback.answer("Некорректный ID книги", show_alert=True)
+            await callback.answer("⚠️ Некорректный ID книги", show_alert=True)
             return
 
         is_admin = _is_admin(callback.from_user.id if callback.from_user else None, config)
@@ -478,30 +542,41 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
     @router.callback_query(F.data.startswith("book_interest:"))
     async def interest_callback(callback: CallbackQuery) -> None:
         if not callback.data:
-            await callback.answer("Некорректная команда", show_alert=True)
+            await callback.answer("⚠️ Некорректная команда", show_alert=True)
             return
         _, raw_book_id = callback.data.split(":", maxsplit=1)
         if not raw_book_id.isdigit():
-            await callback.answer("Некорректный ID книги", show_alert=True)
+            await callback.answer("⚠️ Некорректный ID книги", show_alert=True)
             return
 
         book = repo.get_book(int(raw_book_id))
         if book is None:
-            await callback.answer("Книга не найдена", show_alert=True)
+            await callback.answer("❌ Книга не найдена", show_alert=True)
             return
 
         user = callback.from_user
-        username = f"@{user.username}" if user and user.username else "без username"
-        full_name = escape(user.full_name) if user else "Unknown user"
+        raw_username = user.username if user and user.username else ""
+        raw_full_name = user.full_name if user else "Unknown user"
+        username = f"@{raw_username}" if raw_username else "без username"
+        full_name = escape(raw_full_name)
         user_line = full_name
         if user:
             user_line = f"<a href=\"tg://user?id={user.id}\">{full_name}</a>"
+            try:
+                repo.add_or_update_interest(
+                    book_id=book.id,
+                    user_id=user.id,
+                    username=raw_username,
+                    full_name=raw_full_name,
+                )
+            except Exception:  # pragma: no cover
+                LOGGER.exception("Failed to persist user interest")
 
         admin_message = (
-            "Новый интерес к книге\n"
-            f"Книга: <b>{escape(book.title)}</b>\n"
-            f"Пользователь: {user_line}\n"
-            f"Ник: {escape(username)}"
+            "📩 Новый интерес к книге\n"
+            f"📘 Книга: <b>{escape(book.title)}</b>\n"
+            f"👤 Пользователь: {user_line}\n"
+            f"🆔 Ник: {escape(username)}"
         )
         try:
             await callback.bot.send_message(config.admin_id, admin_message)
@@ -510,34 +585,34 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
         except Exception:  # pragma: no cover
             LOGGER.exception("Failed to send admin notification")
 
-        await callback.answer("Спасибо! Я получил ваш интерес и свяжусь с вами вручную.")
+        await callback.answer("✅ Спасибо! Я получил ваш интерес и свяжусь с вами вручную.")
 
     @router.callback_query(F.data.startswith("book_setstatus:"))
     async def setstatus_callback(callback: CallbackQuery) -> None:
         if not _is_admin(callback.from_user.id if callback.from_user else None, config):
-            await callback.answer("Только администратор может менять статус.", show_alert=True)
+            await callback.answer("⛔ Только администратор может менять статус.", show_alert=True)
             return
 
         if not callback.data:
-            await callback.answer("Некорректная команда", show_alert=True)
+            await callback.answer("⚠️ Некорректная команда", show_alert=True)
             return
 
         parts = callback.data.split(":")
         if len(parts) != 3:
-            await callback.answer("Некорректная команда", show_alert=True)
+            await callback.answer("⚠️ Некорректная команда", show_alert=True)
             return
 
         _, raw_book_id, status = parts
         if not raw_book_id.isdigit():
-            await callback.answer("Некорректный ID книги", show_alert=True)
+            await callback.answer("⚠️ Некорректный ID книги", show_alert=True)
             return
         if status not in STATUS_LABELS:
-            await callback.answer("Некорректный статус", show_alert=True)
+            await callback.answer("⚠️ Некорректный статус", show_alert=True)
             return
 
         updated = repo.update_status(int(raw_book_id), status)
         if not updated:
-            await callback.answer("Книга не найдена", show_alert=True)
+            await callback.answer("❌ Книга не найдена", show_alert=True)
             return
 
         await _edit_book_card(
@@ -547,7 +622,7 @@ def _build_router(config: Config, repo: BookRepository) -> Router:
             is_admin=True,
             config=config,
         )
-        await callback.answer(f"Статус обновлен: {STATUS_LABELS[status]}")
+        await callback.answer(f"✅ Статус обновлен: {STATUS_LABELS[status]}")
 
     return router
 

@@ -12,7 +12,7 @@
 - `/rules` — правила чтения и возврата.
 
 Админ:
-- в Telegram: `/addbook`, `/books`, `/setstatus`;
+- в Telegram: `/addbook`, `/books`, `/interests`, `/setstatus`;
 - в вебе: список книг, добавление, редактирование, быстрая смена статуса, удаление.
 
 ## Настройка `.env`

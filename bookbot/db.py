@@ -30,6 +30,18 @@ class Book:
     created_at: str
 
 
+@dataclass(frozen=True)
+class BookInterest:
+    book_id: int
+    book_title: str
+    book_status: str
+    user_id: int
+    username: str
+    full_name: str
+    created_at: str
+    updated_at: str
+
+
 class BookRepository:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -47,6 +59,20 @@ class BookRepository:
                     status TEXT NOT NULL,
                     photo_file_id TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS book_interests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL DEFAULT '',
+                    full_name TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE (book_id, user_id)
                 )
                 """
             )
@@ -168,6 +194,64 @@ class BookRepository:
             ).fetchall()
         for row in rows:
             yield int(row["id"]), str(row["title"]), str(row["status"])
+
+    def add_or_update_interest(
+        self,
+        *,
+        book_id: int,
+        user_id: int,
+        username: str,
+        full_name: str,
+    ) -> None:
+        normalized_username = username.strip().lstrip("@")
+        normalized_full_name = full_name.strip() or "Unknown user"
+
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO book_interests (book_id, user_id, username, full_name)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(book_id, user_id) DO UPDATE SET
+                    username = excluded.username,
+                    full_name = excluded.full_name,
+                    updated_at = datetime('now')
+                """,
+                (book_id, user_id, normalized_username, normalized_full_name),
+            )
+            conn.commit()
+
+    def list_interests(self) -> list[BookInterest]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    bi.book_id AS book_id,
+                    COALESCE(b.title, '[книга удалена]') AS book_title,
+                    COALESCE(b.status, '') AS book_status,
+                    bi.user_id AS user_id,
+                    bi.username AS username,
+                    bi.full_name AS full_name,
+                    bi.created_at AS created_at,
+                    bi.updated_at AS updated_at
+                FROM book_interests bi
+                LEFT JOIN books b ON b.id = bi.book_id
+                ORDER BY bi.book_id ASC, bi.updated_at DESC, bi.id DESC
+                """
+            ).fetchall()
+
+        return [
+            BookInterest(
+                book_id=int(row["book_id"]),
+                book_title=str(row["book_title"]),
+                book_status=str(row["book_status"]),
+                user_id=int(row["user_id"]),
+                username=str(row["username"]),
+                full_name=str(row["full_name"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
+        ]
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
